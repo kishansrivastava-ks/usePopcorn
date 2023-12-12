@@ -1,8 +1,52 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import StarRating from "./StarRating";
-import { useMovies } from "./useMovies";
-import { useLocalStorageState } from "./useLocalStorageState";
-import { useKey } from "./useKey";
+
+const tempMovieData = [
+  {
+    imdbID: "tt1375666",
+    Title: "Inception",
+    Year: "2010",
+    Poster:
+      "https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg",
+  },
+  {
+    imdbID: "tt0133093",
+    Title: "The Matrix",
+    Year: "1999",
+    Poster:
+      "https://m.media-amazon.com/images/M/MV5BNzQzOTk3OTAtNDQ0Zi00ZTVkLWI0MTEtMDllZjNkYzNjNTc4L2ltYWdlXkEyXkFqcGdeQXVyNjU0OTQ0OTY@._V1_SX300.jpg",
+  },
+  {
+    imdbID: "tt6751668",
+    Title: "Parasite",
+    Year: "2019",
+    Poster:
+      "https://m.media-amazon.com/images/M/MV5BYWZjMjk3ZTItODQ2ZC00NTY5LWE0ZDYtZTI3MjcwN2Q5NTVkXkEyXkFqcGdeQXVyODk4OTc3MTY@._V1_SX300.jpg",
+  },
+];
+
+const tempWatchedData = [
+  {
+    imdbID: "tt1375666",
+    Title: "Inception",
+    Year: "2010",
+    Poster:
+      "https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg",
+    runtime: 148,
+    imdbRating: 8.8,
+    userRating: 10,
+  },
+  {
+    imdbID: "tt0088763",
+    Title: "Back to the Future",
+    Year: "1985",
+    Poster:
+      "https://m.media-amazon.com/images/M/MV5BZmU0M2Y1OGUtZjIxNi00ZjBkLTg1MjgtOWIyNThiZWIwYjRiXkEyXkFqcGdeQXVyMTQxNzMzNDI@._V1_SX300.jpg",
+    runtime: 116,
+    imdbRating: 8.5,
+    userRating: 9,
+  },
+];
 
 const average = (arr) =>
   arr.reduce((acc, cur, i, arr) => acc + cur / arr.length, 0);
@@ -11,12 +55,11 @@ const KEY = "41b79ddd";
 
 export default function App() {
   const [query, setQuery] = useState("");
+  const [movies, setMovies] = useState([]);
+  const [watched, setWatched] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState(null);
-  const { movies, isLoading, error } = useMovies(query);
-
-  const [watched, setWatched] = useLocalStorageState([], "watched");
-
-  // we can also pass a callback fn to the useState hook ⬇️
 
   // const tempQuery = "interstellar";
 
@@ -47,16 +90,61 @@ export default function App() {
 
   function handleAddWatched(movie) {
     setWatched((watched) => [...watched, movie]);
-
-    // saving watch list using local storage
-
-    // localStorage.setItem("watched", JSON.stringify([...watched, movie]));
-    // localStorage.setItem('<key name>',<actual data>);
   }
 
   function handleDeleteWatched(id) {
     setWatched((watched) => watched.filter((movie) => movie.imdbID !== id));
   }
+
+  useEffect(
+    function () {
+      const controller = new AbortController();
+
+      async function fetchMovies() {
+        try {
+          setIsLoading(true);
+          setError("");
+          // this contains the code that we want to run as a side effect
+          const res = await fetch(
+            `http://www.omdbapi.com/?apikey=${KEY}&s=${query}`,
+            { signal: controller.signal }
+          );
+
+          if (!res.ok)
+            throw new Error("something went wrong with fetching movies");
+
+          const data = await res.json();
+          if (data.Response === "False") throw new Error("Movie not found!");
+
+          setMovies(data.Search);
+          setError("");
+        } catch (err) {
+          if (err.name !== "AbortError") {
+            setError(err.message);
+          }
+          // err.message is the message we passed above
+        } finally {
+          setIsLoading(false);
+        }
+      }
+      if (query.length < 3) {
+        setMovies([]);
+        setError("");
+        return;
+      }
+
+      handleCloseMovie();
+      fetchMovies();
+
+      return function () {
+        controller.abort();
+      };
+    },
+    [query]
+  );
+  // the [] means that the effect we specified here will only run on mount, i.e when the App component is rendered for the fist time
+
+  // the fetch would return a promise handled by the then method which would receive the response which is converted to JSON data
 
   return (
     <>
@@ -123,15 +211,6 @@ function Logo() {
 function Search({ query, setQuery }) {
   // const [query, setQuery] = useState("");
 
-  // useRef(<initial value that we want to be in the property>)
-  const inputEl = useRef(null);
-
-  useKey("Enter", function () {
-    if (document.activeElement === inputEl.current) return;
-    inputEl.current.focus();
-    setQuery("");
-  });
-
   return (
     <input
       className="search"
@@ -139,7 +218,6 @@ function Search({ query, setQuery }) {
       placeholder="Search movies..."
       value={query}
       onChange={(e) => setQuery(e.target.value)}
-      ref={inputEl} // they are connected now
     />
   );
 }
@@ -219,20 +297,6 @@ function MovieDetails({ selectedId, onCloseMovie, onAddWatched, watched }) {
   const [isLoading, setIsLoading] = useState(false);
   const [userRating, setUserRating] = useState("");
 
-  // 🔴 the initial state value in react is onlu looked at in the beginning, that is when the component mounts for the first time
-
-  const countRef = useRef(0);
-
-  // 🔴 we cannot mutate the ref in a render logic so we use a useEffect
-  useEffect(
-    function () {
-      if (userRating) {
-        countRef.current++;
-      }
-    },
-    [userRating]
-  );
-
   const isWatched = watched.map((movie) => movie.imdbID).includes(selectedId);
   const watchedUserRating = watched.find(
     (movie) => movie.imdbID === selectedId
@@ -251,12 +315,6 @@ function MovieDetails({ selectedId, onCloseMovie, onAddWatched, watched }) {
     Genre: genre,
   } = movie;
 
-  // if (imdbRating > 8) {
-  //   const [isTop, setIsTop] = useState(true);
-  // }
-
-  // const [isTop, setIsTop] = useState(true);
-
   function handleAdd() {
     const newWatchedMovie = {
       imdbID: selectedId,
@@ -266,34 +324,30 @@ function MovieDetails({ selectedId, onCloseMovie, onAddWatched, watched }) {
       imdbRating: Number(imdbRating),
       runtime: Number(runtime.split(" ").at(0)),
       userRating,
-      countRatingDecisions: countRef.current,
     };
     onAddWatched(newWatchedMovie);
     onCloseMovie();
   }
 
-  useKey("Escape", onCloseMovie);
+  useEffect(
+    // this use effect is included in the movie details because we want to add the escape key event only when the movie details component is mounted and not anytime else
 
-  // ⬇️ the following is moved to the useKey file
-  // useEffect(
-  //   // this use effect is included in the movie details because we want to add the escape key event only when the movie details component is mounted and not anytime else
+    function () {
+      function callback(e) {
+        if (e.code === "Escape") {
+          onCloseMovie();
+        }
+      }
 
-  //   function () {
-  //     function callback(e) {
-  //       if (e.code === "Escape") {
-  //         onCloseMovie();
-  //       }
-  //     }
-
-  //     document.addEventListener("keydown", callback);
-  //     return function () {
-  //       // as soon as the movie details componenet unmounts the event listener will get removed from the document
-  //       // if we dont do this then on every mounting of the movieDetails component, the previous event listener would stay and will listen to the next escape keypress event
-  //       document.removeEventListener("keydown", callback);
-  //     };
-  //   },
-  //   [onCloseMovie]
-  // );
+      document.addEventListener("keydown", callback);
+      return function () {
+        // as soon as the movie details componenet unmounts the event listener will get removed from the document
+        // if we dont do this then on every mounting of the movieDetails component, the previous event listener would stay and will listen to the next escape keypress event
+        document.removeEventListener("keydown", callback);
+      };
+    },
+    [onCloseMovie]
+  );
 
   useEffect(
     function () {
