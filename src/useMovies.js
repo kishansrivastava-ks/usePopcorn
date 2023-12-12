@@ -18,7 +18,7 @@ export function useMovies(query) {
           setError("");
           // this contains the code that we want to run as a side effect
           const res = await fetch(
-            `http://www.omdbapi.com/?apikey=${KEY}&s=${query}`,
+            `https://www.omdbapi.com/?apikey=${KEY}&s=${query}`,
             { signal: controller.signal }
           );
 
